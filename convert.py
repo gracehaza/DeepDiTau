@@ -37,6 +37,7 @@ logging.basicConfig(level=logging.INFO, stream=sys.stderr, format='%(asctime)s.%
 NTHREADS = 16
 parallel = True # TODO: reimplement
 entrysteps = 300000
+decorrelate = True
 
 # don't over write previous work
 # TODO: this can be updated to recover from a cancelled conversion
@@ -61,7 +62,8 @@ logging.info('Will convert {} files'.format(len(fnames)))
 treename = 'deepntuplizerCA8/tree'
 
 # must create these branches, they are what is output
-out_truth = ['lightjet', 'bjet', 'TauHTauH']#, 'TauHTauM', 'TauHTauE', 'TauMTauE']
+out_truth = ['lightjet', 'bjet', 'TauHTauH']#, 'TauHTauM', 'TauHTauE']#, 'TauMTauE']
+out_vars = ['jet_mass'] # for mass decorrelation
 # here make a map for convenience later
 truth_map = {
     'lightjet': ['isUD','isS','isG','isC','isCC','isGCC',],
@@ -402,7 +404,11 @@ def convert_fname(fname,i):
             W = arrays['weight'][selection]
             # note: this stacks the list of arrays that happens if a branch is an array
             X = [np.swapaxes(np.stack([arrays[ab][selection] for ab in groupb]),0,1) for groupb in branch_groupings]
-            Y = np.swapaxes(np.stack([arrays[ot][selection] for ot in out_truth]),0,1)
+            if decorrelate:
+                Y = [np.swapaxes(np.stack([arrays[ot][selection] for ot in out_truth]),0,1),
+                     np.swapaxes(np.stack([arrays[ov][selection] for ov in out_vars]),0,1)]
+            else:
+                Y = np.swapaxes(np.stack([arrays[ot][selection] for ot in out_truth]),0,1)
             return W, X, Y
     
         # convert to numpy
@@ -413,7 +419,11 @@ def convert_fname(fname,i):
             np.save('{}/{}_{}.w.npy'.format(outDir,name,i),W)
             for j,x in enumerate(X):
                 np.save('{}/{}_{}.x{}.npy'.format(outDir,name,i,j),x)
-            np.save('{}/{}_{}.y.npy'.format(outDir,name,i),Y)
+            if decorrelate:
+                for j,y in enumerate(Y):
+                    np.save('{}/{}_{}.y{}.npy'.format(outDir,name,i,j),y)
+            else:
+                np.save('{}/{}_{}.y.npy'.format(outDir,name,i),Y)
             with open('{}/{}_{}.input'.format(outDir,name,i),'w') as f:
                 f.write(fname)
         else:
@@ -426,7 +436,11 @@ def convert_fname(fname,i):
                 np.save('{}/{}_{}_{}.w.npy'.format(outDir,name,truth,i),W[truth])
                 for j,x in enumerate(X[truth]):
                     np.save('{}/{}_{}_{}.x{}.npy'.format(outDir,name,truth,i,j),x)
-                np.save('{}/{}_{}_{}.y.npy'.format(outDir,name,truth,i),Y[truth])
+                if decorrelate:
+                    for j,y in enumerate(Y[truth]):
+                        np.save('{}/{}_{}_{}.y{}.npy'.format(outDir,name,truth,i,j),y)
+                else:
+                    np.save('{}/{}_{}_{}.y.npy'.format(outDir,name,truth,i),Y[truth])
             with open('{}/{}_{}.input'.format(outDir,name,i),'w') as f:
                 f.write(fname)
 

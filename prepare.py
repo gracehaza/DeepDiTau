@@ -14,6 +14,8 @@ if tf.__version__.startswith('2'):
 else:
     from keras import backend as k
 
+from Disco_tf import mass_decorrelation_loss
+
 # this prepares a trained model and means/sigmas for use with CMSSW
 k.set_learning_phase(0)
 
@@ -30,7 +32,10 @@ args = parser.parse_args()
 inDir = args.convertDir
 outDir = args.trainDir
 
-model = load_model('{}/KERAS_check_best_model.h5'.format(outDir))
+modelFile = '{}/KERAS_check_best_model.h5'.format(outDir)
+# Note: doesnt work with custom loss function
+#model = load_model(modelFile)
+model = load_model(modelFile, custom_objects={'mass_decorrelation_loss':mass_decorrelation_loss})
 print(model.inputs)
 print(model.outputs)
 

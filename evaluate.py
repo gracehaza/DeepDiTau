@@ -24,6 +24,8 @@ usePlaid = args.plaid
 if usePlaid:
     os.environ["KERAS_BACKEND"] = "plaidml.keras.backend"
 
+decorrelate = True
+
 import numpy as np
 from keras.models import load_model
 
@@ -34,6 +36,8 @@ else:
     from keras import backend as k
 from sklearn.metrics import confusion_matrix, roc_curve, auc
 from sklearn.utils.multiclass import unique_labels
+
+from Disco_tf import mass_decorrelation_loss
 
 import matplotlib as mpl
 mpl.use('Agg')
@@ -48,13 +52,20 @@ if not usePlaid:
 
 # load all at once
 nx = 4
+ny = 2
 def load_data():
     fnames = sorted(glob.glob('{}/output_validation_*.x0.npy'.format(inDir)))
     Xs = [[np.load(fname.replace('.x0.npy','.x{}.npy'.format(i))) for i in range(nx)] for fname in fnames]
-    Ys = [np.load(fname.replace('.x0.npy','.y.npy')) for fname in fnames]
+    if decorrelate:
+        Ys = [[np.load(fname.replace('.x0.npy','.y{}.npy'.format(i))) for i in range(ny)] for fname in fnames]
+    else:
+        Ys = [np.load(fname.replace('.x0.npy','.y.npy')) for fname in fnames]
 
     X = [np.vstack([Xs[j][i] for j in range(len(Xs))]) for i in range(nx)] #if len(Xs[0])>1 else [x[0] for x in Xs]
-    Y = np.vstack(Ys) if len(Ys)>1 else Ys[0]
+    if decorrelate:
+        Y = [np.vstack([Ys[j][i] for j in range(len(Ys))]) for i in range(ny)]
+    else:
+        Y = np.vstack(Ys) if len(Ys)>1 else Ys[0]
 
     rootnames = []
     for fname in fnames:
@@ -63,7 +74,12 @@ def load_data():
 
     friendnames = ['{}/{}'.format(outDir,os.path.basename(fname.replace('.x0.npy','.root'))) for fname in fnames]
 
-    return X, Y, rootnames, friendnames
+    if decorrelate:
+        X = X+[Y[1]]
+        Y = np.hstack(Y)
+        return X, Y, rootnames, friendnames
+    else:
+        return X, Y, rootnames, friendnames
 
 
 # TODO load via generator
@@ -167,7 +183,14 @@ def plot_roc_curve(savename,y_test,y_score,classes):
 #############
 
 X, Y, rootnames, friendnames = load_data()
-model = load_model('{}/KERAS_check_best_model.h5'.format(outDir))
+if decorrelate:
+    nclasses = Y.shape[1]-1
+else:
+    nclasses = Y.shape[1]
+modelFile = '{}/KERAS_check_best_model.h5'.format(outDir)
+# doesnt work with custom loss
+#model = load_model(modelFile)
+model = load_model(modelFile, custom_objects={'mass_decorrelation_loss':mass_decorrelation_loss})
 model.summary()
 
 results = model.evaluate(X, Y,
@@ -184,9 +207,9 @@ print([x.shape for x in X])
 print(Y.shape)
 print(prediction.shape)
 
-for i in range(Y.shape[1]):
-    Y_i = Y[Y[:,i]]
-    p_i = prediction[Y[:,i]]
+for i in range(nclasses):
+    Y_i = Y[Y[:,i].astype(int)==1]
+    p_i = prediction[Y[:,i].astype(int)==1]
     print('class',i)
     print('truth')
     print(Y_i[:5])
@@ -196,9 +219,9 @@ for i in range(Y.shape[1]):
 
 np.set_printoptions(precision=2)
 
-Y_pred = np.argmax(prediction, axis=1)
-Y_truth = np.argmax(Y, axis=1)
-class_names = ['lightjet', 'bjet', 'TauHTauH']#, 'TauHTauM', 'TauHTauE', 'TauMTauE']
+Y_pred = np.argmax(prediction[:,:nclasses], axis=1)
+Y_truth = np.argmax(Y[:,:nclasses], axis=1)
+class_names = ['lightjet', 'bjet', 'TauHTauH']#, 'TauHTauM', 'TauHTauE']#, 'TauMTauE']
 plot_confusion_matrix('{}/confusion'.format(outDir), Y_truth, Y_pred, classes=class_names, normalize=True)
 
 # TODO: validate, written before the training was ready

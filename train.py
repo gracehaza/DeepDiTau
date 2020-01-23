@@ -17,6 +17,7 @@ parser.add_argument('--plaid', action='store_true',
 
 args = parser.parse_args()
 
+decorrelate = True
 
 # TODO, continue training?
 inDir = args.convertDir
@@ -47,12 +48,13 @@ if tf.__version__.startswith('2'):
     from tensorflow.keras import backend as k
 else:
     from keras import backend as k
+from Disco_tf import mass_decorrelation_loss # mass decorrelation via distance correlation
 
 import matplotlib as mpl
 mpl.use('Agg')
 import matplotlib.pyplot as plt
 
-truth_classes = ['lightjet', 'bjet', 'TauHTauH']#, 'TauHTauM', 'TauHTauE', 'TauMTauE']
+truth_classes = ['lightjet', 'bjet', 'TauHTauH']#, 'TauHTauM', 'TauHTauE']#, 'TauMTauE']
 
 if not usePlaid:
     config = tf.ConfigProto()
@@ -65,6 +67,7 @@ if not usePlaid:
 max_memory = 50 * 1024 * 1024 * 1024 / len(truth_classes)
 
 nx = 4
+ny = 2
 def load_data():
     fnames = {truth: sorted([f for f in glob.glob('{}/output_{}*.x0.npy'.format(inDir,truth)) if 'validation' not in f]) for truth in truth_classes}
     X = {}
@@ -77,23 +80,29 @@ def load_data():
         random.shuffle(fnames[truth])
         for fname in fnames[truth]:
             Xs += [[np.load(fname.replace('.x0.npy','.x{}.npy'.format(i))) for i in range(nx)]]
-            Ys += [np.load(fname.replace('.x0.npy','.y.npy'))]
+            if decorrelate:
+                Ys += [[np.load(fname.replace('.x0.npy','.y{}.npy'.format(i))) for i in range(ny)]]
+            else:
+                Ys += [np.load(fname.replace('.x0.npy','.y.npy'))]
             Ws += [np.load(fname.replace('.x0.npy','.w.npy'))]
 
-            def get_size(*arrays):
-                return sum([a.size * a.itemsize for a in arrays])
+            #def get_size(*arrays):
+            #    return sum([a.size * a.itemsize for a in arrays])
 
-            total_size = sum([
-                sum([get_size(*xi) for xi in Xs]),
-                get_size(*Ys),
-                get_size(*Ws),
-            ])
-            if total_size>max_memory: break
+            #total_size = sum([
+            #    sum([get_size(*xi) for xi in Xs]),
+            #    get_size(*Ys),
+            #    get_size(*Ws),
+            #])
+            #if total_size>max_memory: break
 
         Ws = [np.reshape(w,(w.shape[0],1)) for w in Ws]
 
         X[truth] = [np.vstack([Xs[j][i] for j in range(len(Xs))]) for i in range(nx)]
-        Y[truth] = np.vstack(Ys) 
+        if decorrelate:
+            Y[truth] = [np.vstack([Ys[j][i] for j in range(len(Ys))]) for i in range(ny)]
+        else:
+            Y[truth] = np.vstack(Ys) 
         W[truth] = np.vstack(Ws) 
 
         #print(truth)
@@ -105,15 +114,18 @@ def load_data():
         n = W[truth].shape[0]
 
         # try dropping rather than weighting them
-        rdrop = np.random.rand(n)
-        keep = W[truth].reshape(n)>rdrop
-        X[truth] = [X[truth][j][keep] for j in range(len(X[truth]))]
-        Y[truth] = Y[truth][keep]
-        W[truth] = W[truth][keep]
-        nn = W[truth].shape[0]
-        W[truth][W[truth].reshape(nn)<1] = 1
+        #rdrop = np.random.rand(n)
+        #keep = W[truth].reshape(n)>rdrop
+        #X[truth] = [X[truth][j][keep] for j in range(len(X[truth]))]
+        #Y[truth] = Y[truth][keep]
+        #W[truth] = W[truth][keep]
+        #nn = W[truth].shape[0]
+        #W[truth][W[truth].reshape(nn)<1] = 1
 
-    class_counts = [Y[truth].shape[0] for truth in truth_classes]
+    if decorrelate:
+        class_counts = [Y[truth][0].shape[0] for truth in truth_classes]
+    else:
+        class_counts = [Y[truth].shape[0] for truth in truth_classes]
     min_c = min(class_counts)
 
     #class_weights = [c/sum(class_counts) for c in class_counts]
@@ -121,30 +133,44 @@ def load_data():
     #    W[truth] = W[truth] * class_weights[i]
     
     X = {truth: [X[truth][i][:min_c] for i in range(nx)] for truth in truth_classes}
-    Y = {truth: Y[truth][:min_c] for truth in truth_classes}
+    if decorrelate:
+        Y = {truth: [Y[truth][i][:min_c] for i in range(ny)] for truth in truth_classes}
+    else:
+        Y = {truth: Y[truth][:min_c] for truth in truth_classes}
     W = {truth: W[truth][:min_c] for truth in truth_classes}
 
     X = [np.vstack([X[truth][i] for truth in truth_classes]) for i in range(nx)]
-    Y = np.vstack([Y[truth] for truth in truth_classes])
+    if decorrelate:
+        Y = [np.vstack([Y[truth][i] for truth in truth_classes]) for i in range(ny)]
+    else:
+        Y = np.vstack([Y[truth] for truth in truth_classes])
     W = np.vstack([W[truth] for truth in truth_classes])
     W = np.reshape(W,(W.shape[0],))
 
+    if decorrelate:
+        args = X + Y + [W]
+    else:
+        args = X + [Y,W]
     res = train_test_split(
-        *X + [Y, W],
+        *args,
         shuffle = True,
         test_size = 0.1,
         random_state = 123456,
     )
     X_train = [res[2*i] for i in range(nx)]
     X_test  = [res[2*i+1] for i in range(nx)]
-    Y_train = res[2*nx]
-    Y_test  = res[2*nx+1]
-    W_train = res[2*nx+2]
-    W_test  = res[2*nx+3]
+    if decorrelate:
+        Y_train = [res[2*nx+2*i] for i in range(ny)]
+        Y_test  = [res[2*nx+2*i+1] for i in range(ny)]
+        W_train = res[2*(nx+ny)]
+        W_test  = res[2*(nx+ny)+1]
+    else:
+        Y_train = res[2*nx]
+        Y_test  = res[2*nx+1]
+        W_train = res[2*nx+2]
+        W_test  = res[2*nx+3]
 
     return X_train, X_test, Y_train, Y_test, W_train, W_test
-
-
 
 
 #############
@@ -199,14 +225,25 @@ def build_model(input_shapes, num_classes,
 
     prediction = Dense(num_classes, activation='softmax', kernel_initializer='lecun_uniform', name='ID_pred')(layer)
 
-    outputs = [prediction]
+    if decorrelate:
+        mass_input = Input(shape=(1,))
+        mass_output = Dense(1, activation='linear',kernel_initializer='normal',name='mass_pred')(mass_input)
+        new_prediction = Concatenate()([prediction,mass_output])
+        inputs += [mass_input]
+        outputs = [new_prediction]
+    else:
+        outputs = [prediction]
 
     model = Model(inputs=inputs, outputs=outputs)
 
     optimizer = Adam(lr=lr)
+    if decorrelate:
+        loss = [mass_decorrelation_loss]
+    else:
+        loss = ['categorical_crossentropy']
     model.compile(
         optimizer=optimizer,
-        loss=['categorical_crossentropy'],
+        loss=loss,
         metrics=['accuracy'],
     )
     return model
@@ -231,11 +268,25 @@ modelArgs = {
 
 X_train, X_test, Y_train, Y_test, W_train, W_test = load_data()
 print([xt.shape for xt in X_train])
-model = build_model([X_test[i].shape[1:] for i in range(nx)],Y_test.shape[1],**modelArgs)
+if decorrelate:
+    nclasses = Y_test[0].shape[1]
+else:
+    nclasses = Y_test.shape[1]
+print(nclasses)
+model = build_model([X_test[i].shape[1:] for i in range(nx)],nclasses,**modelArgs)
 model.summary()
 
-history = model.fit(X_train, Y_train,
-                    batch_size = 20000, 
+if decorrelate:
+    _X_train, _Y_train = X_train+[Y_train[1]], np.hstack(Y_train)
+else:
+    _X_train, _Y_train = X_train, Y_train
+
+print([xi.shape for xi in _X_train])
+print(_Y_train.shape)
+
+history = model.fit(_X_train, _Y_train,
+                    #batch_size = 20000, 
+                    batch_size = 5000, # lower for mass decorrelation
                     epochs = 1000, 
                     verbose = 1,
                     validation_split = 0.1,
