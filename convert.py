@@ -515,8 +515,9 @@ def mean_fname(fname,i):
             a = arrays[key]
             while isinstance(a,awkward.JaggedArray): a = a.flatten()
             if a.size==0: continue
-            #a = a[~np.isnan(a)]
-            #a = a[~np.isinf(a)]
+            # remove NaNs, but should understand why they happen
+            a = a[~np.isnan(a)]
+            a = a[~np.isinf(a)]
             m = a.mean()
             v = a.var()
             if np.isnan(m):
