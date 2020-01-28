@@ -178,7 +178,9 @@ def build_model(input_shapes, num_classes,
 
         # LSTM
         if doLSTM:
-            x = Masking(mask_value=0., name='masking_{}'.format(i))(x)
+            # Not supported with plaidML
+            if not usePlaid:
+                x = Masking(mask_value=0., name='masking_{}'.format(i))(x)
             x = LSTM(lstmWidth,implementation=2, name='lstm_{}'.format(i))(x)
             if batchnorm:
                 x = BatchNormalization(momentum=momentum,name='lstm_batchnorm_{}'.format(i))(x)
@@ -263,6 +265,7 @@ print(_Y_train.shape)
 
 history = model.fit(_X_train, _Y_train,
                     batch_size = 5000 if decorrelate else 10000, # lower for mass decorrelation
+                    #batch_size = 1,
                     epochs = 1000, 
                     verbose = 1,
                     validation_split = 0.1,

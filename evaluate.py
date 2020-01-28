@@ -71,7 +71,7 @@ def load_data():
 
     rootnames = []
     for fname in fnames:
-        with open(fname.replace('.x0.npy','.input')) as f:
+        with open(fname.replace('_0.x0.npy','.input')) as f:
             rootnames += [line.strip('\n') for line in f.readlines()]
 
     friendnames = ['{}/{}'.format(outDir,os.path.basename(fname.replace('.x0.npy','.root'))) for fname in fnames]

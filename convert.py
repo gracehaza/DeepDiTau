@@ -6,7 +6,7 @@ import random
 import itertools
 import threading
 import numpy as np
-from multiprocessing import  Pool
+from multiprocessing import  Pool, cpu_count
 import json
 import awkward
 import uproot
@@ -34,11 +34,12 @@ args = parser.parse_args()
 
 logging.basicConfig(level=logging.INFO, stream=sys.stderr, format='%(asctime)s.%(msecs)03d %(levelname)s %(name)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
-NTHREADS = 24
+NTHREADS = int(cpu_count()*1.5)
 parallel = True # note: doesnt actual do anything
 entrysteps = 300000
 decorrelate = True
-useramdisk = True # only increases speed a little bit
+import platform
+useramdisk = platform.system()=='Linux' # only increases speed a little bit
 maxfiles = -1
 
 # don't over write previous work
@@ -195,9 +196,10 @@ branches = [
     "jet_daughter_vy",
     "jet_daughter_vz",
     "jet_daughter_dxy",
-    "jet_daughter_dxyError",
+    # TODO: found inf in dxyError, dzError
+    #"jet_daughter_dxyError",
     "jet_daughter_dz",
-    "jet_daughter_dzError",
+    #"jet_daughter_dzError",
     "jet_daughter_pixelLayersWithMeasurement",
     "jet_daughter_stripLayersWithMeasurement",
     "jet_daughter_trackerLayersWithMeasurement",
@@ -222,9 +224,9 @@ charged_hadron_branches = [
     "charged_hadron_vy",
     "charged_hadron_vz",
     "charged_hadron_dxy",
-    "charged_hadron_dxyError",
+    #"charged_hadron_dxyError",
     "charged_hadron_dz",
-    "charged_hadron_dzError",
+    #"charged_hadron_dzError",
     "charged_hadron_pixelLayersWithMeasurement",
     "charged_hadron_stripLayersWithMeasurement",
     "charged_hadron_trackerLayersWithMeasurement",
@@ -253,17 +255,15 @@ muon_branches = [
     "muon_vy",
     "muon_vz",
     "muon_dxy",
-    "muon_dxyError",
+    #"muon_dxyError",
     "muon_dz",
-    "muon_dzError",
+    #"muon_dzError",
     "muon_pixelLayersWithMeasurement",
     "muon_stripLayersWithMeasurement",
     "muon_trackerLayersWithMeasurement",
     "muon_trackHighPurity",
     "muon_puppiWeight",
-    "muon_puppiWeightNoLep",
     "muon_isStandAloneMuon",
-    "muon_isTrackerMuon",
     "muon_isGlobalMuon",
 ]
 
@@ -278,16 +278,14 @@ electron_branches = [
     "electron_vy",
     "electron_vz",
     "electron_dxy",
-    "electron_dxyError",
+    #"electron_dxyError",
     "electron_dz",
-    "electron_dzError",
+    #"electron_dzError",
     "electron_pixelLayersWithMeasurement",
     "electron_stripLayersWithMeasurement",
     "electron_trackerLayersWithMeasurement",
     "electron_trackHighPurity",
     "electron_puppiWeight",
-    "electron_puppiWeightNoLep",
-    "electron_isGoodEgamma",
 ]
 
 photon_branches = [
@@ -299,7 +297,6 @@ photon_branches = [
     "photon_isGoodEgamma",
 ]
 
-all_branches = branches + charged_hadron_branches + neutral_hadron_branches + muon_branches + electron_branches + photon_branches
 
 # save the branch names to a text file for use later
 with open('{}/branches.txt'.format(outDir),'w') as f:
@@ -315,6 +312,9 @@ branch_groupings = [
     electron_branches,
     photon_branches,
 ]
+all_branches = []
+for bg in branch_groupings:
+    all_branches += bg
 
 # how much to zero pad and truncate branches
 branch_lengths = {}
@@ -510,11 +510,13 @@ def mean_fname(fname,i):
         arrays = transform(arrays)
         for key in arrays:
             if key not in all_branches: continue
+            # skip jet_daughter since it was renamed
+            if 'jet_daughter_' in key: continue
             a = arrays[key]
             while isinstance(a,awkward.JaggedArray): a = a.flatten()
             if a.size==0: continue
-            a = a[~np.isnan(a)]
-            a = a[~np.isinf(a)]
+            #a = a[~np.isnan(a)]
+            #a = a[~np.isinf(a)]
             m = a.mean()
             v = a.var()
             if np.isnan(m):
@@ -533,7 +535,10 @@ def mean_fname(fname,i):
         _rm_ramdisk(fname)
     return {'means': means, 'varis': varis}
 
-subfnames = fnames[:int(0.1*len(fnames))]
+nfiles = int(0.1*len(fnames))
+if nfiles<200:
+    nfiles = min([200,len(fnames)])
+subfnames = fnames[:nfiles]
 with concurrent.futures.ThreadPoolExecutor(NTHREADS) as executor:
     futures = set(executor.submit(mean_fname, fname, i) for i, fname in enumerate(subfnames))
     results = _futures_handler(futures, status=True, unit='files', desc='Calculating means')
@@ -581,7 +586,7 @@ def weighting(arrays):
 
 # this fuction normalizes each feature using the linear, log-linear, or (default) unit normal weighting from above
 def normalize(arrays):
-    for key in branches:
+    for key in all_branches:
         if key in linear_branches:
             arrays[key] = (arrays[key].clip(*linear_branches[key])-linear_branches[key][0])/(linear_branches[key][1]-linear_branches[key][0])
         elif key in loglinear_branches:
@@ -595,7 +600,7 @@ def normalize(arrays):
 def padtruncate(arrays):
     for b,l in branch_lengths.items():
         if b not in arrays: continue
-        arrays[b] = arrays[b].pad(l,clip=True).fillna(0).regular()
+        arrays[b] = arrays[b].pad(l,clip=True).fillna(0.0).regular()
     return arrays
 
 # the main conversion definition
