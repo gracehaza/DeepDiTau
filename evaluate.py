@@ -54,20 +54,14 @@ if not usePlaid:
 
 # load all at once
 nx = 6
-ny = 2
+ny = 2 if decorrelate else 1
 def load_data():
     fnames = sorted(glob.glob('{}/output_validation_*.x0.npy'.format(inDir)))
     Xs = [[np.load(fname.replace('.x0.npy','.x{}.npy'.format(i))) for i in range(nx)] for fname in fnames]
-    if decorrelate:
-        Ys = [[np.load(fname.replace('.x0.npy','.y{}.npy'.format(i))) for i in range(ny)] for fname in fnames]
-    else:
-        Ys = [np.load(fname.replace('.x0.npy','.y.npy')) for fname in fnames]
+    Ys = [[np.load(fname.replace('.x0.npy','.y{}.npy'.format(i))) for i in range(ny)] for fname in fnames]
 
     X = [np.vstack([Xs[j][i] for j in range(len(Xs))]) for i in range(nx)] #if len(Xs[0])>1 else [x[0] for x in Xs]
-    if decorrelate:
-        Y = [np.vstack([Ys[j][i] for j in range(len(Ys))]) for i in range(ny)]
-    else:
-        Y = np.vstack(Ys) if len(Ys)>1 else Ys[0]
+    Y = [np.vstack([Ys[j][i] for j in range(len(Ys))]) for i in range(ny)]
 
     rootnames = []
     for fname in fnames:
@@ -81,6 +75,7 @@ def load_data():
         Y = np.hstack(Y)
         return X, Y, rootnames, friendnames
     else:
+        Y = Y[0]
         return X, Y, rootnames, friendnames
 
 

@@ -263,8 +263,10 @@ else:
 print([xi.shape for xi in _X_train])
 print(_Y_train.shape)
 
+batch_size = 5000 if decorrelate else 10000 # lower for mass decorrelation
+if usePlaid: batch_size = int(batch_size/2)
 history = model.fit(_X_train, _Y_train,
-                    batch_size = 5000 if decorrelate else 10000, # lower for mass decorrelation
+                    batch_size = batch_size,
                     #batch_size = 1,
                     epochs = 1000, 
                     verbose = 1,
