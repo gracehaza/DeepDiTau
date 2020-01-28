@@ -12,7 +12,7 @@ def mass_decorrelation_loss(y_true, y_pred, sample_weight=None):
     lamb = 1e3 # TODO: tune
     # here first argument is the mass, second argument is output to decorrelate (3rd element is TauHTauH), third is weight
     if sample_weight is None: sample_weight = tf.ones_like(y_true[:,-1])
-    disco = distance_corr(y_true[:,-1], y_pred[:,2], sample_weight)
+    disco = sum([distance_corr(y_true[:,-1], y_pred[:,c], sample_weight) for c in range(y_pred.shape[1]-1)])
 
     return cce + lamb * disco
 

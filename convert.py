@@ -34,10 +34,12 @@ args = parser.parse_args()
 
 logging.basicConfig(level=logging.INFO, stream=sys.stderr, format='%(asctime)s.%(msecs)03d %(levelname)s %(name)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
-NTHREADS = 16
-parallel = True # TODO: reimplement
+NTHREADS = 24
+parallel = True # note: doesnt actual do anything
 entrysteps = 300000
 decorrelate = True
+useramdisk = True # only increases speed a little bit
+maxfiles = -1
 
 # don't over write previous work
 # TODO: this can be updated to recover from a cancelled conversion
@@ -56,22 +58,50 @@ for r, d, f in os.walk(inDir):
         if fname.endswith('.root'):
             fnames += [os.path.join(r,fname)]
 random.shuffle(fnames)
+fnames = fnames[:maxfiles]
 
 logging.info('Will convert {} files'.format(len(fnames)))
 
-treename = 'deepntuplizerCA8/tree'
+redirector = 'root://cmseos.fnal.gov/'
+def _get_ramdisk(fname):
+    if fname.startswith('/dev/shm'): return fname
+    fnameComps = fname.split('/')
+    if '/store/user' in fname: fnameComps = fnameComps[fnameComps.index('user')+1:]
+    if 'gpuscratch' in fname: fnameComps = fnameComps[fnameComps.index('gpuscratch')+1:]
+    fname_ramdisk = '/dev/shm/'+str(os.getpid())+'_'.join(fnameComps)
+    return fname_ramdisk
+
+def _get_xrootd(fname):
+    if fname.startswith('root://'): return fname
+    fnameComps = fname.split('/')
+    if '/store/user' in fname: fnameComps = fnameComps[fnameComps.index('store'):]
+    fname_xrootd = '{}/{}'.format(redirector,'/'.join(fnameComps))
+    return fname_xrootd
+
+def _cp_xrootd_to_ramdisk(fname):
+    fname_ramdisk = _get_ramdisk(fname)
+    fname_xrootd = _get_xrootd(fname)
+    if not os.path.exists(fname_ramdisk):
+        os.makedirs(os.path.dirname(fname_ramdisk),exist_ok=True)
+        os.system('xrdcp {} {} > /dev/null 2>&1'.format(fname_xrootd,fname_ramdisk))
+
+def _rm_ramdisk(fname):
+    fname_ramdisk = _get_ramdisk(fname)
+    os.system('rm -rf '+fname_ramdisk)
+
+treename = 'deepJetTree/DeepJetTree'
 
 # must create these branches, they are what is output
 out_truth = ['lightjet', 'bjet', 'TauHTauH']#, 'TauHTauM', 'TauHTauE']#, 'TauMTauE']
 out_vars = ['jet_mass'] # for mass decorrelation
 # here make a map for convenience later
 truth_map = {
-    'lightjet': ['isUD','isS','isG','isC','isCC','isGCC',],
-    'bjet': ['isB','isBB','isGBB',],
-    'TauHTauH': ['isTauHTauH'],
-    #'TauHTauM': ['isTauHTauM'],
-    #'TauHTauE': ['isTauHTauE'],
-    #'TauMTauE': ['isTauMTauE'],
+    'lightjet': ['jet_isUD','jet_isS','jet_isG','jet_isC'],
+    'bjet': ['jet_isB'],
+    'TauHTauH': ['jet_isTauHTauH'],
+    #'TauHTauM': ['jet_isTauHTauM'],
+    #'TauHTauE': ['jet_isTauHTauE'],
+    #'TauMTauE': ['jet_isTauMTauE'],
 }
 
 # weight bins to normalize different objects to the same specturm
@@ -81,7 +111,7 @@ weight_bins = [
         [20,25,30,35,40,50,60,80,100,200,500,1000,2000,7000],
         dtype=float
     ),
-    # get_abseta
+    # jet_abseta
     np.array(
         [0.0,0.5,1.0,1.5,2.0,2.5],
         dtype=float
@@ -98,6 +128,9 @@ weight_branches = ['jet_pt','jet_eta']
 reference = 'TauHTauH'
 # these are helper branches (perhaps truth info) that are not output to numpy
 other_branches = [
+    'jet_hadronFlavour',
+    'jet_partonFlavour',
+    "jet_daughter_pdgId",
 ]
 for t, bs in truth_map.items():
     other_branches += bs
@@ -111,38 +144,162 @@ branches = [
     'jet_eta',
     'jet_phi',
     'jet_mass',
-    # charged pf features
-    'Cpfcan_ptrel',
-    'Cpfcan_erel',
-    'Cpfcan_phirel',
-    'Cpfcan_etarel',
-    'Cpfcan_puppiw',
-    'Cpfcan_dxy',
-    'Cpfcan_dz',
-    'Cpfcan_isMu',
-    'Cpfcan_isEl',
-    # neutral pd features
-    'Npfcan_ptrel',
-    'Npfcan_erel',
-    'Npfcan_puppiw',
-    'Npfcan_phirel',
-    'Npfcan_etarel',
-    'Npfcan_isGamma',
-    'Npfcan_HadFrac',
-    # secondary vertex features
-    'sv_etarel',
-    'sv_phirel',
-    'sv_mass',
-    'sv_ntracks',
-    'sv_chi2',
-    'sv_ndf',
-    'sv_dxy',
-    'sv_dxyerr',
-    'sv_dxysig',
-    'sv_d3d',
-    'sv_d3derr',
-    'sv_d3dsig',
+    'jet_jetCharge',
+    "jet_chargedMultiplicity",
+    "jet_neutralMultiplicity",
+    "jet_chargedHadronMultiplicity",
+    "jet_neutralHadronMultiplicity",
+    "jet_muonMultiplicity",
+    "jet_electronMultiplicity",
+    "jet_photonMultiplicity",
+    "jet_chargedEmEnergy",
+    "jet_neutralEmEnergy",
+    "jet_chargedHadronEnergy",
+    "jet_neutralHadronEnergy",
+    "jet_muonEnergy",
+    "jet_electronEnergy",
+    "jet_photonEnergy",
+    "jet_chargedEmEnergyFraction",
+    "jet_neutralEmEnergyFraction",
+    "jet_chargedHadronEnergyFraction",
+    "jet_neutralHadronEnergyFraction",
+    "jet_muonEnergyFraction",
+    "jet_electronEnergyFraction",
+    "jet_photonEnergyFraction",
+    "jet_pfJetBProbabilityBJetTags",
+    "jet_pfJetProbabilityBJetTags",
+    "jet_pfTrackCountingHighEffBJetTags",
+    "jet_pfSimpleSecondaryVertexHighEffBJetTags",
+    "jet_pfSimpleInclusiveSecondaryVertexHighEffBJetTags",
+    "jet_pfCombinedSecondaryVertexV2BJetTags",
+    "jet_pfCombinedInclusiveSecondaryVertexV2BJetTags",
+    # these have NaNs, need to understand, remove for now
+    #"jet_softPFMuonBJetTags",
+    #"jet_softPFElectronBJetTags",
+    "jet_pfCombinedMVAV2BJetTags",
+    "jet_pfCombinedCvsLJetTags",
+    "jet_pfCombinedCvsBJetTags",
+    "jet_pfDeepCSVJetTags_probb",
+    "jet_pfDeepCSVJetTags_probc",
+    "jet_pfDeepCSVJetTags_probudsg",
+    "jet_pfDeepCSVJetTags_probbb",
+    # pf cands
+    "jet_daughter_pt",
+    "jet_daughter_eta",
+    "jet_daughter_phi",
+    "jet_daughter_mass",
+    "jet_daughter_charge",
+    "jet_daughter_etaAtVtx",
+    "jet_daughter_phiAtVtx",
+    "jet_daughter_vx",
+    "jet_daughter_vy",
+    "jet_daughter_vz",
+    "jet_daughter_dxy",
+    "jet_daughter_dxyError",
+    "jet_daughter_dz",
+    "jet_daughter_dzError",
+    "jet_daughter_pixelLayersWithMeasurement",
+    "jet_daughter_stripLayersWithMeasurement",
+    "jet_daughter_trackerLayersWithMeasurement",
+    "jet_daughter_trackHighPurity",
+    "jet_daughter_puppiWeight",
+    "jet_daughter_puppiWeightNoLep",
+    "jet_daughter_isIsolatedChargedHadron",
+    "jet_daughter_isStandAloneMuon",
+    "jet_daughter_isTrackerMuon",
+    "jet_daughter_isGlobalMuon",
+    "jet_daughter_isGoodEgamma",
 ]
+
+charged_hadron_branches = [
+    "charged_hadron_pt",
+    "charged_hadron_eta",
+    "charged_hadron_phi",
+    "charged_hadron_charge",
+    "charged_hadron_etaAtVtx",
+    "charged_hadron_phiAtVtx",
+    "charged_hadron_vx",
+    "charged_hadron_vy",
+    "charged_hadron_vz",
+    "charged_hadron_dxy",
+    "charged_hadron_dxyError",
+    "charged_hadron_dz",
+    "charged_hadron_dzError",
+    "charged_hadron_pixelLayersWithMeasurement",
+    "charged_hadron_stripLayersWithMeasurement",
+    "charged_hadron_trackerLayersWithMeasurement",
+    "charged_hadron_trackHighPurity",
+    "charged_hadron_puppiWeight",
+    "charged_hadron_puppiWeightNoLep",
+    "charged_hadron_isIsolatedChargedHadron",
+]
+
+neutral_hadron_branches = [
+    "neutral_hadron_pt",
+    "neutral_hadron_eta",
+    "neutral_hadron_phi",
+    "neutral_hadron_puppiWeight",
+    "neutral_hadron_puppiWeightNoLep",
+]
+
+muon_branches = [
+    "muon_pt",
+    "muon_eta",
+    "muon_phi",
+    "muon_charge",
+    "muon_etaAtVtx",
+    "muon_phiAtVtx",
+    "muon_vx",
+    "muon_vy",
+    "muon_vz",
+    "muon_dxy",
+    "muon_dxyError",
+    "muon_dz",
+    "muon_dzError",
+    "muon_pixelLayersWithMeasurement",
+    "muon_stripLayersWithMeasurement",
+    "muon_trackerLayersWithMeasurement",
+    "muon_trackHighPurity",
+    "muon_puppiWeight",
+    "muon_puppiWeightNoLep",
+    "muon_isStandAloneMuon",
+    "muon_isTrackerMuon",
+    "muon_isGlobalMuon",
+]
+
+electron_branches = [
+    "electron_pt",
+    "electron_eta",
+    "electron_phi",
+    "electron_charge",
+    "electron_etaAtVtx",
+    "electron_phiAtVtx",
+    "electron_vx",
+    "electron_vy",
+    "electron_vz",
+    "electron_dxy",
+    "electron_dxyError",
+    "electron_dz",
+    "electron_dzError",
+    "electron_pixelLayersWithMeasurement",
+    "electron_stripLayersWithMeasurement",
+    "electron_trackerLayersWithMeasurement",
+    "electron_trackHighPurity",
+    "electron_puppiWeight",
+    "electron_puppiWeightNoLep",
+    "electron_isGoodEgamma",
+]
+
+photon_branches = [
+    "photon_pt",
+    "photon_eta",
+    "photon_phi",
+    "photon_puppiWeight",
+    "photon_puppiWeightNoLep",
+    "photon_isGoodEgamma",
+]
+
+all_branches = branches + charged_hadron_branches + neutral_hadron_branches + muon_branches + electron_branches + photon_branches
 
 # save the branch names to a text file for use later
 with open('{}/branches.txt'.format(outDir),'w') as f:
@@ -151,63 +308,109 @@ with open('{}/branches.txt'.format(outDir),'w') as f:
 
 # group the branches based on the number of output numpy blocks
 branch_groupings = [
-    # jet branches
-    [b for b in branches if not any([b.startswith('Cpfcan_'), b.startswith('Npfcan_'), b.startswith('sv_')])],
-    # charged pf
-    [b for b in branches if b.startswith('Cpfcan_')],
-    # neutral pf
-    [b for b in branches if b.startswith('Npfcan_')],
-    # secondary vertices
-    [b for b in branches if b.startswith('sv_')],
+    [b for b in branches if not 'jet_daughter_' in b],
+    charged_hadron_branches,
+    neutral_hadron_branches,
+    muon_branches,
+    electron_branches,
+    photon_branches,
 ]
 
 # how much to zero pad and truncate branches
 branch_lengths = {}
-branch_lengths.update({b: 10 for b in branches if b.startswith('Cpfcan_')})
-branch_lengths.update({b: 10 for b in branches if b.startswith('Npfcan_')})
-branch_lengths.update({b: 4 for b in branches if b.startswith('sv_')})
+branch_lengths.update({b:10 for b in charged_hadron_branches})
+branch_lengths.update({b:10 for b in neutral_hadron_branches})
+branch_lengths.update({b:4 for b in muon_branches})
+branch_lengths.update({b:4 for b in electron_branches})
+branch_lengths.update({b:4 for b in photon_branches})
 
 # can optionally linearize branches between [0,1]
 linear_branches = {
-    'jet_eta': [-3.0,3.0],
+    'jet_eta': [-2.5,2.5],
     'jet_phi': [-np.pi,np.pi],
 }
 # or for momentum, log-linearize
 loglinear_branches = {
-    'jet_pt': [1.5,7000.],
+    'jet_pt': [20.,7000.],
 }
+
+# parallel processing
+def _futures_handler(futures_set, status=True, unit='items', desc='Processing'):
+    results = []
+    try:
+        with tqdm(disable=not status, unit=unit, total=len(futures_set), desc=desc) as pbar:
+            while len(futures_set) > 0:
+                finished = set(job for job in futures_set if job.done())
+                futures_set.difference_update(finished)
+                while finished:
+                    res = finished.pop().result()
+                    results += [res]
+                    pbar.update(1)
+                time.sleep(0.5)
+    except KeyboardInterrupt:
+        for job in futures_set:
+            job.cancel()
+        if status:
+            print("Received SIGINT, killed pending jobs.  Running jobs will continue to completion.", file=sys.stderr)
+            print("Running jobs:", sum(1 for j in futures_set if j.running()), file=sys.stderr)
+    except Exception:
+        for job in futures_set:
+            job.cancel()
+        raise
+    return results
+
 # all other branches will be mean normalized to 0 with a sigma of 1
+
+def build_truth(arrays,fname=''):
+    keep = np.zeros_like(arrays['jet_pt'], dtype=bool)
+    for t, bs in truth_map.items():
+        thistruth = np.zeros_like(keep, dtype=bool)
+        for b in bs:
+            # only grab a certain type of jet from each sample
+            if 'SUSY' in fname and 'Tau' not in t: continue
+            if 'TTJet' in fname and t not in ['bjet','lightjet']: continue
+            if 'QCD' in fname and t not in ['bjet','lightjet']: continue
+            if t=='lightjet': # toss 90% of lightjet since we have so much
+                rdf = np.random.rand(*thistruth.shape)
+                thistruth = (thistruth | ((arrays[b]==1) & (rdf<0.1)))
+            else:
+                thistruth = (thistruth | (arrays[b]==1))
+        keep = (keep | thistruth)
+        arrays[t] = thistruth
+    return arrays, keep
+    
 
 # get weights for the number of each kind of class in the input files
 # begin by getting the distributions for each truth class
-distributions = {}
-with tqdm(unit='files', total=len(fnames), desc='Calculating weights') as pbar:
-    for fname in fnames:
-        for arrays in uproot.iterate(fname,treename,other_branches+weight_branches,namedecode="utf-8",entrysteps=entrysteps):
-            arrays['jet_abseta'] = abs(arrays['jet_eta'])
-            keep = np.zeros_like(arrays['jet_pt'], dtype=bool)
-            for t, bs in truth_map.items():
-                thistruth = np.zeros_like(keep, dtype=bool)
-                for b in bs:
-                    if b=='isG': # toss 90% of gluon
-                        rdf = np.random.rand(*thistruth.shape)
-                        thistruth = (thistruth | ((arrays[b]==1) & (rdf<0.1)))
-                    else:
-                        thistruth = (thistruth | (arrays[b]==1))
-                keep = (keep | thistruth)
-                arrays[t] = thistruth
+def weight_fname(fname,i):
+    distributions = {}
+    for arrays in uproot.iterate(fname,treename,other_branches+weight_branches,namedecode="utf-8",entrysteps=entrysteps):
+        arrays['jet_abseta'] = abs(arrays['jet_eta'])
+        arrays, keep = build_truth(arrays,fname)
     
-            for truth in out_truth:
-                hist, xedges, yedges = np.histogram2d(
-                    arrays[weight_bin_labels[0]][arrays[truth]],
-                    arrays[weight_bin_labels[1]][arrays[truth]],
-                    weight_bins
-                )
-                if truth in distributions:
-                    distributions[truth] = distributions[truth]+hist
-                else:
-                    distributions[truth] = hist
-        pbar.update(1)
+        for truth in out_truth:
+            hist, xedges, yedges = np.histogram2d(
+                arrays[weight_bin_labels[0]][arrays[truth]],
+                arrays[weight_bin_labels[1]][arrays[truth]],
+                weight_bins
+            )
+            if truth in distributions:
+                distributions[truth] = distributions[truth]+hist
+            else:
+                distributions[truth] = hist
+    return distributions, xedges, yedges
+
+with concurrent.futures.ThreadPoolExecutor(NTHREADS) as executor:
+    futures = set(executor.submit(weight_fname, fname, i) for i, fname in enumerate(fnames))
+    results = _futures_handler(futures, status=True, unit='files', desc='Calculating weights')
+    distributions = {}
+    for res in results:
+        histdist, xedges, yedges = res
+        for truth in histdist:
+            if truth in distributions:
+                distributions[truth] = distributions[truth]+histdist[truth]
+            else:
+                distributions[truth] = histdist[truth]
 
 # helper function to divide the truth information
 def divide_distributions(a,b):
@@ -252,52 +455,100 @@ for truth in out_truth:
 def transform(arrays):
     for key in branches:
         if key not in arrays: continue
+        # adapt daughters to remove some degrees of freedom
+        if key=='jet_daughter_pt':
+            arrays[key] = arrays[key]/arrays['jet_pt']
+        if key=='jet_daughter_eta':
+            arrays[key] = arrays[key]-arrays['jet_eta']
+        if key=='jet_daughter_phi':
+            arrays[key] = arrays[key]-arrays['jet_phi']
+        if key=='jet_daughter_etaAtVtx':
+            arrays[key] = arrays[key]-arrays['jet_eta']
+        if key=='jet_daughter_phiAtVtx':
+            arrays[key] = arrays[key]-arrays['jet_phi']
+
+        # create reduced arrays of daughters
+        if 'jet_daughter_' not in key: continue
+        chkey = key.replace('jet_daughter_','charged_hadron_')
+        nhkey = key.replace('jet_daughter_','neutral_hadron_')
+        mkey = key.replace('jet_daughter_','muon_')
+        ekey = key.replace('jet_daughter_','electron_')
+        pkey = key.replace('jet_daughter_','photon_')
+        chmask = ((abs(arrays['jet_daughter_pdgId'])!=13)
+                & (abs(arrays['jet_daughter_pdgId'])!=11) 
+                & (abs(arrays['jet_daughter_pdgId'])!=22) 
+                & (abs(arrays['jet_daughter_charge'])>0))
+        nhmask = ((abs(arrays['jet_daughter_pdgId'])!=13)
+                & (abs(arrays['jet_daughter_pdgId'])!=11) 
+                & (abs(arrays['jet_daughter_pdgId'])!=22) 
+                & (abs(arrays['jet_daughter_charge'])==0))
+        mmask = (abs(arrays['jet_daughter_pdgId'])==13)
+        emask = (abs(arrays['jet_daughter_pdgId'])==11)
+        pmask = (abs(arrays['jet_daughter_pdgId'])==22)
+        arrays[chkey] = arrays[key][chmask]
+        arrays[nhkey] = arrays[key][nhmask]
+        arrays[mkey] = arrays[key][mmask]
+        arrays[ekey] = arrays[key][emask]
+        arrays[pkey] = arrays[key][pmask]
     return arrays
 
 # get means and sigmas for each branch so that they can be normalized later
-means_sum = {key:[] for key in branches}
-varis_sum = {key:[] for key in branches}
 # dont need to look at them all for means...
+def mean_fname(fname,i):
+    if useramdisk:
+        _cp_xrootd_to_ramdisk(fname)
+    means = {key:[] for key in all_branches}
+    varis = {key:[] for key in all_branches}
+    for arrays in uproot.iterate(fname,treename,branches+other_branches,namedecode="utf-8",entrysteps=entrysteps):
+        for key in arrays:
+            # convert vector<vector<T>> (ObjectArray by default) into nested JaggedArray
+            if isinstance(arrays[key],awkward.ObjectArray): arrays[key] = awkward.fromiter(arrays[key])
+        arrays, keep = build_truth(arrays,fname)
+        for key in arrays:
+            arrays[key] = arrays[key][keep]
+
+        arrays = transform(arrays)
+        for key in arrays:
+            if key not in all_branches: continue
+            a = arrays[key]
+            while isinstance(a,awkward.JaggedArray): a = a.flatten()
+            if a.size==0: continue
+            a = a[~np.isnan(a)]
+            a = a[~np.isinf(a)]
+            m = a.mean()
+            v = a.var()
+            if np.isnan(m):
+                logging.error(f'NaN found: {key}')
+                print(fname)
+                raise ValueError
+            elif np.isinf(m):
+                logging.error(f'Inf found: {key}')
+                print(fname)
+                raise ValueError
+            else:
+                # protection against empty arrays
+                means[key] += [m]
+                varis[key] += [v]
+    if useramdisk:
+        _rm_ramdisk(fname)
+    return {'means': means, 'varis': varis}
+
 subfnames = fnames[:int(0.1*len(fnames))]
-with tqdm(unit='files', total=len(subfnames), desc='Calculating means') as pbar:
-    for fname in subfnames:
-        for arrays in uproot.iterate(fname,treename,branches+other_branches,namedecode="utf-8",entrysteps=entrysteps):
-            for key in arrays:
-                # convert vector<vector<T>> (ObjectArray by default) into nested JaggedArray
-                if isinstance(arrays[key],awkward.ObjectArray): arrays[key] = awkward.fromiter(arrays[key])
-            keep = np.zeros_like(arrays['jet_pt'], dtype=bool)
-            for t, bs in truth_map.items():
-                thistruth = np.zeros_like(keep, dtype=bool)
-                for b in bs:
-                    if b=='isG': # toss 90% of gluon
-                        rdf = np.random.rand(*thistruth.shape)
-                        thistruth = (thistruth | ((arrays[b]==1) & (rdf<0.1)))
-                    else:
-                        thistruth = (thistruth | (arrays[b]==1))
-                keep = (keep | thistruth)
-                arrays[t] = thistruth
-            for key in arrays:
-                arrays[key] = arrays[key][keep]
+with concurrent.futures.ThreadPoolExecutor(NTHREADS) as executor:
+    futures = set(executor.submit(mean_fname, fname, i) for i, fname in enumerate(subfnames))
+    results = _futures_handler(futures, status=True, unit='files', desc='Calculating means')
+    means_sum = {key:[] for key in all_branches}
+    varis_sum = {key:[] for key in all_branches}
+    for res in results:
+        for key in res['means']:
+            means_sum[key] += res['means'][key]
+            varis_sum[key] += res['varis'][key]
 
-            arrays = transform(arrays)
-            means = {}
-            varis = {}
-            for key in arrays:
-                if key not in branches: continue
-                a = arrays[key]
-                while isinstance(a,awkward.JaggedArray): a = a.flatten()
-                if a.size==0: continue
-                means[key] = a[~np.isnan(a)].mean()
-                varis[key] = a[~np.isnan(a)].var()
-                if not np.isnan(means[key]):
-                    # protection against empty arrays. happens with sv for high pt QCD samples...
-                    means_sum[key] += [means[key]]
-                    varis_sum[key] += [varis[key]]
-        pbar.update(1)
-
-means = {key: np.array(means_sum[key]).mean() for key in branches}
-varis = {key: np.array(varis_sum[key]).mean() for key in branches}
-stds  = {key: np.sqrt(np.array(varis_sum[key]).mean()) for key in branches}
+means = {key: np.array(means_sum[key]).mean() for key in all_branches}
+varis = {key: np.array(varis_sum[key]).mean() for key in all_branches}
+stds  = {key: np.sqrt(np.array(varis_sum[key]).mean()) for key in all_branches}
+# protection against divide by 0 later
+stds  = {key: std if std else 1.0 for key,std in stds.items()}
 
 for key in sorted(means):
     logging.info(f'{key}: {means[key]} +/- {stds[key]}')
@@ -349,6 +600,9 @@ def padtruncate(arrays):
 
 # the main conversion definition
 def convert_fname(fname,i):
+    if useramdisk:
+        _cp_xrootd_to_ramdisk(fname)
+    k = 0 # if there are multiple chunks in the tree
     for arrays in uproot.iterate(fname,treename,other_branches+branches,namedecode="utf-8",entrysteps=entrysteps):
         # this sets aside 10% for validation checks later
         isval = i%10==1
@@ -358,17 +612,7 @@ def convert_fname(fname,i):
             if isinstance(arrays[key],awkward.ObjectArray): arrays[key] = awkward.fromiter(arrays[key])
 
         # define truth
-        keep = np.zeros_like(arrays['jet_pt'], dtype=bool)
-        for t, bs in truth_map.items():
-            thistruth = np.zeros_like(keep, dtype=bool)
-            for b in bs:
-                if b=='isG': # toss 90% of gluon
-                    rdf = np.random.rand(*thistruth.shape)
-                    thistruth = (thistruth | ((arrays[b]==1) & (rdf<0.1)))
-                else:
-                    thistruth = (thistruth | (arrays[b]==1))
-            keep = (keep | thistruth)
-            arrays[t] = thistruth
+        arrays, keep = build_truth(arrays,fname)
 
         # selections
         for key in arrays:
@@ -387,16 +631,20 @@ def convert_fname(fname,i):
         arrays = padtruncate(arrays)
     
 
-        # check for NaN
+        # zero out NaN/Inf
+        # we've alread padtruncate into numpy ndarray, so only do the ones we will save
+        # and dont worry about jagged arrays
         for key in arrays:
+            if key not in all_branches: continue
             a = arrays[key]
-            while isinstance(a,awkward.JaggedArray): a = a.flatten()
-            n = np.isnan(a)
-            while isinstance(n, np.ndarray): n = n.sum()
-            if n:
-                print(fname)
-                print(k)
-                print(a[:5])
+            notgood = (np.isnan(a) | np.isinf(a))
+            while not isinstance(notgood,np.bool_):
+                notgood = notgood.any()
+            if notgood:
+                a[np.isnan(a)] = 0
+                a[np.isinf(a)] = 0
+                arrays[key] = a
+                
 
         def get_output(arrays,out_truth,selection=None):
             if selection is None:
@@ -408,7 +656,7 @@ def convert_fname(fname,i):
                 Y = [np.swapaxes(np.stack([arrays[ot][selection] for ot in out_truth]),0,1),
                      np.swapaxes(np.stack([arrays[ov][selection] for ov in out_vars]),0,1)]
             else:
-                Y = np.swapaxes(np.stack([arrays[ot][selection] for ot in out_truth]),0,1)
+                Y = [np.swapaxes(np.stack([arrays[ot][selection] for ot in out_truth]),0,1)]
             return W, X, Y
     
         # convert to numpy
@@ -416,15 +664,12 @@ def convert_fname(fname,i):
             W, X, Y = get_output(arrays,out_truth)
     
             name = 'output_validation'
-            np.save('{}/{}_{}.w.npy'.format(outDir,name,i),W)
+            np.save(f'{outDir}/{name}_{i}_{k}.w.npy',W)
             for j,x in enumerate(X):
-                np.save('{}/{}_{}.x{}.npy'.format(outDir,name,i,j),x)
-            if decorrelate:
-                for j,y in enumerate(Y):
-                    np.save('{}/{}_{}.y{}.npy'.format(outDir,name,i,j),y)
-            else:
-                np.save('{}/{}_{}.y.npy'.format(outDir,name,i),Y)
-            with open('{}/{}_{}.input'.format(outDir,name,i),'w') as f:
+                np.save(f'{outDir}/{name}_{i}_{k}.x{j}.npy',x)
+            for j,y in enumerate(Y):
+                np.save(f'{outDir}/{name}_{i}_{k}.y{j}.npy',y)
+            with open(f'{outDir}/{name}_{i}.input','w') as f:
                 f.write(fname)
         else:
             W, X, Y = {}, {}, {}
@@ -433,37 +678,17 @@ def convert_fname(fname,i):
 
             name = 'output'
             for truth in out_truth:
-                np.save('{}/{}_{}_{}.w.npy'.format(outDir,name,truth,i),W[truth])
+                np.save(f'{outDir}/{name}_{truth}_{i}_{k}.w.npy',W[truth])
                 for j,x in enumerate(X[truth]):
-                    np.save('{}/{}_{}_{}.x{}.npy'.format(outDir,name,truth,i,j),x)
-                if decorrelate:
-                    for j,y in enumerate(Y[truth]):
-                        np.save('{}/{}_{}_{}.y{}.npy'.format(outDir,name,truth,i,j),y)
-                else:
-                    np.save('{}/{}_{}_{}.y.npy'.format(outDir,name,truth,i),Y[truth])
-            with open('{}/{}_{}.input'.format(outDir,name,i),'w') as f:
+                    np.save(f'{outDir}/{name}_{truth}_{i}_{k}.x{j}.npy',x)
+                for j,y in enumerate(Y[truth]):
+                    np.save(f'{outDir}/{name}_{truth}_{i}_{k}.y{j}.npy',y)
+            with open(f'{outDir}/{name}_{i}.input','w') as f:
                 f.write(fname)
 
-def _futures_handler(futures_set, status=True, unit='items', desc='Processing'):
-    try:
-        with tqdm(disable=not status, unit=unit, total=len(futures_set), desc=desc) as pbar:
-            while len(futures_set) > 0:
-                finished = set(job for job in futures_set if job.done())
-                futures_set.difference_update(finished)
-                while finished:
-                    res = finished.pop().result()
-                    pbar.update(1)
-                time.sleep(0.5)
-    except KeyboardInterrupt:
-        for job in futures_set:
-            job.cancel()
-        if status:
-            print("Received SIGINT, killed pending jobs.  Running jobs will continue to completion.", file=sys.stderr)
-            print("Running jobs:", sum(1 for j in futures_set if j.running()), file=sys.stderr)
-    except Exception:
-        for job in futures_set:
-            job.cancel()
-        raise
+        k += 1
+    if useramdisk:
+        _rm_ramdisk(fname)
 
 # iterative fallback
 #for i,fname in enumerate(fnames):
@@ -474,4 +699,4 @@ def _futures_handler(futures_set, status=True, unit='items', desc='Processing'):
 # would like to break apart by chunks
 with concurrent.futures.ThreadPoolExecutor(NTHREADS) as executor:
     futures = set(executor.submit(convert_fname, fname, i) for i, fname in enumerate(fnames))
-    _futures_handler(futures, status=True, unit='items', desc='Processing')
+    results = _futures_handler(futures, status=True, unit='files', desc='Converting')

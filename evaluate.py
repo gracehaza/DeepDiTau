@@ -51,7 +51,7 @@ if not usePlaid:
 
 
 # load all at once
-nx = 4
+nx = 6
 ny = 2
 def load_data():
     fnames = sorted(glob.glob('{}/output_validation_*.x0.npy'.format(inDir)))

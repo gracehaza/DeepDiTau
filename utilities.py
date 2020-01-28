@@ -7,12 +7,7 @@ import logging
 
 def python_mkdir(directory):
     '''A function to make a unix directory as well as subdirectories'''
-    try:
-        if directory: os.makedirs(directory)
-    except OSError as exc:
-        if exc.errno == errno.EEXIST and os.path.isdir(directory):
-            pass
-        else: raise
+    if directory: os.makedirs(directory, exist_ok=True)
 
 def which(program):
     def is_exe(fpath):

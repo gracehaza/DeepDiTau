@@ -66,8 +66,8 @@ if not usePlaid:
 # need to use a generator, but for now, limit to at most 50 GB
 max_memory = 50 * 1024 * 1024 * 1024 / len(truth_classes)
 
-nx = 4
-ny = 2
+nx = 6
+ny = 2 if decorrelate else 1
 def load_data():
     fnames = {truth: sorted([f for f in glob.glob('{}/output_{}*.x0.npy'.format(inDir,truth)) if 'validation' not in f]) for truth in truth_classes}
     X = {}
@@ -80,10 +80,7 @@ def load_data():
         random.shuffle(fnames[truth])
         for fname in fnames[truth]:
             Xs += [[np.load(fname.replace('.x0.npy','.x{}.npy'.format(i))) for i in range(nx)]]
-            if decorrelate:
-                Ys += [[np.load(fname.replace('.x0.npy','.y{}.npy'.format(i))) for i in range(ny)]]
-            else:
-                Ys += [np.load(fname.replace('.x0.npy','.y.npy'))]
+            Ys += [[np.load(fname.replace('.x0.npy','.y{}.npy'.format(i))) for i in range(ny)]]
             Ws += [np.load(fname.replace('.x0.npy','.w.npy'))]
 
             #def get_size(*arrays):
@@ -99,10 +96,7 @@ def load_data():
         Ws = [np.reshape(w,(w.shape[0],1)) for w in Ws]
 
         X[truth] = [np.vstack([Xs[j][i] for j in range(len(Xs))]) for i in range(nx)]
-        if decorrelate:
-            Y[truth] = [np.vstack([Ys[j][i] for j in range(len(Ys))]) for i in range(ny)]
-        else:
-            Y[truth] = np.vstack(Ys) 
+        Y[truth] = [np.vstack([Ys[j][i] for j in range(len(Ys))]) for i in range(ny)]
         W[truth] = np.vstack(Ws) 
 
         #print(truth)
@@ -122,10 +116,7 @@ def load_data():
         #nn = W[truth].shape[0]
         #W[truth][W[truth].reshape(nn)<1] = 1
 
-    if decorrelate:
-        class_counts = [Y[truth][0].shape[0] for truth in truth_classes]
-    else:
-        class_counts = [Y[truth].shape[0] for truth in truth_classes]
+    class_counts = [Y[truth][0].shape[0] for truth in truth_classes]
     min_c = min(class_counts)
 
     #class_weights = [c/sum(class_counts) for c in class_counts]
@@ -133,24 +124,15 @@ def load_data():
     #    W[truth] = W[truth] * class_weights[i]
     
     X = {truth: [X[truth][i][:min_c] for i in range(nx)] for truth in truth_classes}
-    if decorrelate:
-        Y = {truth: [Y[truth][i][:min_c] for i in range(ny)] for truth in truth_classes}
-    else:
-        Y = {truth: Y[truth][:min_c] for truth in truth_classes}
+    Y = {truth: [Y[truth][i][:min_c] for i in range(ny)] for truth in truth_classes}
     W = {truth: W[truth][:min_c] for truth in truth_classes}
 
     X = [np.vstack([X[truth][i] for truth in truth_classes]) for i in range(nx)]
-    if decorrelate:
-        Y = [np.vstack([Y[truth][i] for truth in truth_classes]) for i in range(ny)]
-    else:
-        Y = np.vstack([Y[truth] for truth in truth_classes])
+    Y = [np.vstack([Y[truth][i] for truth in truth_classes]) for i in range(ny)]
     W = np.vstack([W[truth] for truth in truth_classes])
     W = np.reshape(W,(W.shape[0],))
 
-    if decorrelate:
-        args = X + Y + [W]
-    else:
-        args = X + [Y,W]
+    args = X + Y + [W]
     res = train_test_split(
         *args,
         shuffle = True,
@@ -159,16 +141,10 @@ def load_data():
     )
     X_train = [res[2*i] for i in range(nx)]
     X_test  = [res[2*i+1] for i in range(nx)]
-    if decorrelate:
-        Y_train = [res[2*nx+2*i] for i in range(ny)]
-        Y_test  = [res[2*nx+2*i+1] for i in range(ny)]
-        W_train = res[2*(nx+ny)]
-        W_test  = res[2*(nx+ny)+1]
-    else:
-        Y_train = res[2*nx]
-        Y_test  = res[2*nx+1]
-        W_train = res[2*nx+2]
-        W_test  = res[2*nx+3]
+    Y_train = [res[2*nx+2*i] for i in range(ny)]
+    Y_test  = [res[2*nx+2*i+1] for i in range(ny)]
+    W_train = res[2*(nx+ny)]
+    W_test  = res[2*(nx+ny)+1]
 
     return X_train, X_test, Y_train, Y_test, W_train, W_test
 
@@ -268,10 +244,9 @@ modelArgs = {
 
 X_train, X_test, Y_train, Y_test, W_train, W_test = load_data()
 print([xt.shape for xt in X_train])
-if decorrelate:
-    nclasses = Y_test[0].shape[1]
-else:
-    nclasses = Y_test.shape[1]
+print([yt.shape for yt in Y_train])
+print(W_train.shape)
+nclasses = Y_test[0].shape[1]
 print(nclasses)
 model = build_model([X_test[i].shape[1:] for i in range(nx)],nclasses,**modelArgs)
 model.summary()
