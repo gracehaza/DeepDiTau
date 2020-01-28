@@ -15,6 +15,8 @@ parser.add_argument('trainDir', type=str,
                     help='Directory of trained model')
 parser.add_argument('--plaid', action='store_true',
                     help='Use plaid (for Mac)')
+parser.add_argument('--decorrelate', action='store_true',
+                    help='Use mass decorrelation')
 
 args = parser.parse_args()
 
@@ -24,7 +26,7 @@ usePlaid = args.plaid
 if usePlaid:
     os.environ["KERAS_BACKEND"] = "plaidml.keras.backend"
 
-decorrelate = False
+decorrelate = args.decorrelate
 
 import numpy as np
 from keras.models import load_model

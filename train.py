@@ -13,11 +13,13 @@ parser.add_argument('trainDir', type=str,
                     help='Output directory for trainedresult')
 parser.add_argument('--plaid', action='store_true',
                     help='Use plaid (for Mac)')
+parser.add_argument('--decorrelate', action='store_true',
+                    help='Use mass decorrelation')
 
 
 args = parser.parse_args()
 
-decorrelate = False
+decorrelate = args.decorrelate
 
 # TODO, continue training?
 inDir = args.convertDir

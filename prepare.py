@@ -25,10 +25,12 @@ parser.add_argument('convertDir', type=str,
                     help='Directory of input numpy arrays')
 parser.add_argument('trainDir', type=str,
                     help='Directory of trained model')
+parser.add_argument('--decorrelate', action='store_true',
+                    help='Use mass decorrelation')
 
 args = parser.parse_args()
 
-decorrelate = False
+decorrelate = args.decorrelate
 inDir = args.convertDir
 outDir = args.trainDir
 
