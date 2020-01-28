@@ -17,7 +17,7 @@ parser.add_argument('--plaid', action='store_true',
 
 args = parser.parse_args()
 
-decorrelate = True
+decorrelate = False
 
 # TODO, continue training?
 inDir = args.convertDir
@@ -254,14 +254,13 @@ model.summary()
 if decorrelate:
     _X_train, _Y_train = X_train+[Y_train[1]], np.hstack(Y_train)
 else:
-    _X_train, _Y_train = X_train, Y_train
+    _X_train, _Y_train = X_train, Y_train[0]
 
 print([xi.shape for xi in _X_train])
 print(_Y_train.shape)
 
 history = model.fit(_X_train, _Y_train,
-                    #batch_size = 20000, 
-                    batch_size = 5000, # lower for mass decorrelation
+                    batch_size = 5000 if decorrelate else 10000, # lower for mass decorrelation
                     epochs = 1000, 
                     verbose = 1,
                     validation_split = 0.1,

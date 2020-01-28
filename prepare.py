@@ -28,14 +28,16 @@ parser.add_argument('trainDir', type=str,
 
 args = parser.parse_args()
 
-
+decorrelate = False
 inDir = args.convertDir
 outDir = args.trainDir
 
 modelFile = '{}/KERAS_check_best_model.h5'.format(outDir)
 # Note: doesnt work with custom loss function
-#model = load_model(modelFile)
-model = load_model(modelFile, custom_objects={'mass_decorrelation_loss':mass_decorrelation_loss})
+if decorrelate:
+    model = load_model(modelFile, custom_objects={'mass_decorrelation_loss':mass_decorrelation_loss})
+else:
+    model = load_model(modelFile)
 print(model.inputs)
 print(model.outputs)
 

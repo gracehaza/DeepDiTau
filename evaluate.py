@@ -24,7 +24,7 @@ usePlaid = args.plaid
 if usePlaid:
     os.environ["KERAS_BACKEND"] = "plaidml.keras.backend"
 
-decorrelate = True
+decorrelate = False
 
 import numpy as np
 from keras.models import load_model
