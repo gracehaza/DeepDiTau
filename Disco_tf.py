@@ -9,7 +9,7 @@ def mass_decorrelation_loss(y_true, y_pred, sample_weight=None):
     # I'm using an old keras, really need to go to tensorflow 2.0
     #cce = categorical_crossentropy(y_true[:,:-1], y_pred[:,:-1], sample_weight=sample_weight)
     cce = categorical_crossentropy(y_true[:,:-1], y_pred[:,:-1])
-    lamb = 1e3 # TODO: tune
+    lamb = 1e3/3 # TODO: tune
     # here first argument is the mass, second argument is output to decorrelate (3rd element is TauHTauH), third is weight
     if sample_weight is None: sample_weight = tf.ones_like(y_true[:,-1])
     disco = sum([distance_corr(y_true[:,-1], y_pred[:,c], sample_weight) for c in range(y_pred.shape[1]-1)])
