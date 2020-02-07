@@ -4,6 +4,8 @@ import argparse
 import glob
 import json
 from array import array
+import uproot
+import numpy as np
 
 import ROOT
 ROOT.gROOT.SetBatch()
@@ -213,13 +215,21 @@ for i in range(nclasses):
     print('prediction')
     print(p_i[:5])
 
-
 np.set_printoptions(precision=2)
 
 Y_pred = np.argmax(prediction[:,:nclasses], axis=1)
 Y_truth = np.argmax(Y[:,:nclasses], axis=1)
 class_names = ['lightjet', 'bjet', 'TauHTauH']#, 'TauHTauM', 'TauHTauE']#, 'TauMTauE']
 plot_confusion_matrix('{}/confusion'.format(outDir), Y_truth, Y_pred, classes=class_names, normalize=True)
+
+# save predictions to root file
+with uproot.recreate("{}/prediction.root".format(outDir)) as f:
+    f["prediction"] = uproot.newtree(
+        {'pred_{}'.format(c): float for i,c in enumerate(class_names)}
+    )
+    f["prediction"].extend(
+        {'pred_{}'.format(c): prediction[:1024,i] for i,c in enumerate(class_names)}
+    )
 
 # TODO: validate, written before the training was ready
 pvar = 'jet_pt'
@@ -254,3 +264,61 @@ else:
 print(pvals)
 print(etavals)
 
+allresults = {'tpr':{},'fpr':{},'wps':{}}
+
+results = plot_roc_curve('{}/roc'.format(outDir),Y,prediction,class_names)
+allresults['tpr']['all'] = [results['TauHTauH']['tpr']]
+allresults['fpr']['all'] = [results['TauHTauH']['fpr']]
+allresults['wps']['all'] = [results['TauHTauH']['wps']]
+
+allresults['tpr']['pbins'] = []
+allresults['fpr']['pbins'] = []
+allresults['wps']['pbins'] = []
+for pb in range(npb):
+    thisSel = np.logical_and(pvals>=pbins[pb], pvals<pbins[pb+1])
+    thisY = Y[thisSel]
+    thisPred = prediction[thisSel]
+    results = plot_roc_curve('{}/roc_pBin{}'.format(outDir,pb), thisY, thisPred, class_names)
+    allresults['tpr']['pbins'] += [results['TauHTauH']['tpr']]
+    allresults['fpr']['pbins'] += [results['TauHTauH']['fpr']]
+    allresults['wps']['pbins'] += [results['TauHTauH']['wps']]
+
+allresults['tpr']['etabins'] = []
+allresults['fpr']['etabins'] = []
+allresults['wps']['etabins'] = []
+for eb in range(neb):
+    thisSel = np.logical_and(etavals>=etabins[eb], etavals<etabins[eb+1])
+    thisY = Y[thisSel]
+    thisPred = prediction[thisSel]
+    results = plot_roc_curve('{}/roc_etaBin{}'.format(outDir,eb), thisY, thisPred, class_names)
+    allresults['tpr']['etabins'] += [results['TauHTauH']['tpr']]
+    allresults['fpr']['etabins'] += [results['TauHTauH']['fpr']]
+    allresults['wps']['etabins'] += [results['TauHTauH']['wps']]
+
+for pb in range(npb):
+    allresults['tpr']['pbin{}'.format(pb)] = []
+    allresults['fpr']['pbin{}'.format(pb)] = []
+    allresults['wps']['pbin{}'.format(pb)] = []
+for eb in range(neb):
+    allresults['tpr']['etabin{}'.format(eb)] = []
+    allresults['fpr']['etabin{}'.format(eb)] = []
+    allresults['wps']['etabin{}'.format(eb)] = []
+for pb in range(npb):
+    for eb in range(neb):
+        thisSel = np.logical_and(np.logical_and(pvals>=pbins[pb], pvals<pbins[pb+1]), np.logical_and(etavals>=etabins[eb], etavals<etabins[eb+1]))
+        thisY = Y[thisSel]
+        thisPred = prediction[thisSel]
+        if thisY.shape[0]:
+            results = plot_roc_curve('{}/roc_pBin{}_etaBin{}'.format(outDir,pb,eb), thisY, thisPred, class_names)
+        else:
+            results = {truth:{'tpr':[],'fpr':[],'wps':[]} for truth in class_names}
+        allresults['tpr']['pbin{}'.format(pb)] += [results['TauHTauH']['tpr']]
+        allresults['fpr']['pbin{}'.format(pb)] += [results['TauHTauH']['fpr']]
+        allresults['wps']['pbin{}'.format(pb)] += [results['TauHTauH']['wps']]
+        allresults['tpr']['etabin{}'.format(eb)] += [results['TauHTauH']['tpr']]
+        allresults['fpr']['etabin{}'.format(eb)] += [results['TauHTauH']['fpr']]
+        allresults['wps']['etabin{}'.format(eb)] += [results['TauHTauH']['wps']]
+
+
+with open('{}/roc_ditau.json'.format(outDir),'w') as f:
+    json.dump(allresults,f)

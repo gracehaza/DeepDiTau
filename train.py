@@ -179,8 +179,9 @@ def build_model(input_shapes, num_classes,
         # LSTM
         if doLSTM:
             # Not supported with plaidML
-            if not usePlaid:
-                x = Masking(mask_value=0., name='masking_{}'.format(i))(x)
+            # not support in CMSSW either
+            #if not usePlaid:
+            #    x = Masking(mask_value=0., name='masking_{}'.format(i))(x)
             x = LSTM(lstmWidth,implementation=2, name='lstm_{}'.format(i))(x)
             if batchnorm:
                 x = BatchNormalization(momentum=momentum,name='lstm_batchnorm_{}'.format(i))(x)
@@ -201,7 +202,7 @@ def build_model(input_shapes, num_classes,
         layer = Dense(width, activation='relu', kernel_initializer='lecun_uniform', name='dense_{}'.format(i))(layer)
         if batchnorm:
             layer = BatchNormalization(momentum=momentum, name='dense_batchnorm_{}'.format(i))(layer)
-        layer = Dropout(dropoutRate, name='dense_dropout_{}'.format(i))(layer)
+        layer = Dropout(0.5 if i+1==depth else dropoutRate, name='dense_dropout_{}'.format(i))(layer)
 
     prediction = Dense(num_classes, activation='softmax', kernel_initializer='lecun_uniform', name='ID_pred')(layer)
 
@@ -236,13 +237,13 @@ callbacks = [
 ]
 
 modelArgs = {
-    'doLSTM': True,
+    'doLSTM': False,
     'lstmWidth': 128,
-    'depth': 4,
-    'width': 128,
+    'depth': 8,
+    'width': 256,
     'batchnorm': True,
     'momentum': 0.6, # 0.6-0.85 for large batches (5k+), larger (0.9-0.99) for smaller batches
-    'dropoutRate': 0.2,
+    'dropoutRate': 0.1,
     'lr': 1e-3,
 }
 
@@ -268,7 +269,8 @@ if usePlaid: batch_size = int(batch_size/2)
 history = model.fit(_X_train, _Y_train,
                     batch_size = batch_size,
                     #batch_size = 1,
-                    epochs = 1000, 
+                    epochs = 1000,
+                    #epochs = 10,
                     verbose = 1,
                     validation_split = 0.1,
                     shuffle = True,

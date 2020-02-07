@@ -63,7 +63,14 @@ with open('{}/means.json'.format(inDir)) as f:
     result = json.load(f)
 means = result['means']
 stds = result['stds']
+linear = result['linear']
+loglinear = result['loglinear']
 with open('{}/mean_sigmas.txt'.format(outDir),'w') as f:
     for k in means:
-        f.write('{},{},{}\n'.format(k,means[k],stds[k]))
+        if k in linear:
+            f.write('{},{},{}\n'.format(k,*linear[k]))
+        elif k in loglinear:
+            f.write('{},{},{}\n'.format(k,*loglinear[k]))
+        else:
+            f.write('{},{},{}\n'.format(k,means[k],stds[k]))
     
