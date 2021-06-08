@@ -52,11 +52,16 @@ if os.path.exists(outDir):
 
 os.makedirs(outDir, exist_ok=True)
 
+#logging.info('inputdir: {}'.format(inDir))
 # get all root files in the directory
 fnames = []
 for r, d, f in os.walk(inDir):
+#for r, d, f in os.walk('/eos/uscms/store/user/ghaza/27Nov2020test'):
+#    logging.info('test at line 59')
     for fname in f:
-        if fname.endswith('.root'):
+       logging.info('fname: {}'.format(fname))
+       if fname.endswith('.root'):
+ #           print('file name: '+ fname)
             fnames += [os.path.join(r,fname)]
 random.shuffle(fnames)
 fnames = fnames[:maxfiles]
@@ -91,6 +96,7 @@ def _rm_ramdisk(fname):
     os.system('rm -rf '+fname_ramdisk)
 
 treename = 'deepJetTree/DeepJetTree'
+#treename = 'DiMuDiTauAnalyzer/objectTree'
 
 # must create these branches, they are what is output
 out_truth = ['lightjet', 'bjet', 'TauHTauH']#, 'TauHTauM', 'TauHTauE']#, 'TauMTauE']

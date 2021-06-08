@@ -10,6 +10,7 @@ import numpy as np
 import ROOT
 ROOT.gROOT.SetBatch()
 
+
 parser = argparse.ArgumentParser(description='Evaluate')
 parser.add_argument('convertDir', type=str, 
                     help='Directory of input numpy arrays')
@@ -67,7 +68,7 @@ def load_data():
 
     rootnames = []
     for fname in fnames:
-        with open(fname.replace('_0.x0.npy','.input')) as f:
+        with open(fname.replace('_0.x0.npy','.input'), errors='ignore') as f:    #ignore errors added 29 nov 2020 because of weird ascii character complaint
             rootnames += [line.strip('\n') for line in f.readlines()]
 
     friendnames = ['{}/{}'.format(outDir,os.path.basename(fname.replace('.x0.npy','.root'))) for fname in fnames]
@@ -189,7 +190,7 @@ else:
 modelFile = '{}/KERAS_check_best_model.h5'.format(outDir)
 # doesnt work with custom loss
 #model = load_model(modelFile)
-model = load_model(modelFile, custom_objects={'mass_decorrelation_loss':mass_decorrelation_loss})
+model = load_model(modelFile,custom_objects={'mass_decorrelation_loss':mass_decorrelation_loss})
 model.summary()
 
 results = model.evaluate(X, Y,

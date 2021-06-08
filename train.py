@@ -199,6 +199,7 @@ def build_model(input_shapes, num_classes,
         layer = concat[0]
 
     for i in range(depth):
+#        layer = Dense(width, activation='linear', kernel_initializer='lecun_uniform', name='dense_{}'.format(i))(layer)
         layer = Dense(width, activation='relu', kernel_initializer='lecun_uniform', name='dense_{}'.format(i))(layer)
         if batchnorm:
             layer = BatchNormalization(momentum=momentum, name='dense_batchnorm_{}'.format(i))(layer)
@@ -209,6 +210,7 @@ def build_model(input_shapes, num_classes,
     if decorrelate:
         mass_input = Input(shape=(1,))
         mass_output = Dense(1, activation='linear',kernel_initializer='normal',name='mass_pred')(mass_input)
+#        mass_output = Dense(1, activation='tanh',kernel_initializer='normal',name='mass_pred')(mass_input)
         new_prediction = Concatenate()([prediction,mass_output])
         inputs += [mass_input]
         outputs = [new_prediction]
@@ -239,7 +241,8 @@ callbacks = [
 modelArgs = {
     'doLSTM': False,
     'lstmWidth': 128,
-    'depth': 8,
+#    'depth': 8,
+    'depth': 32,
     'width': 256,
     'batchnorm': True,
     'momentum': 0.6, # 0.6-0.85 for large batches (5k+), larger (0.9-0.99) for smaller batches
