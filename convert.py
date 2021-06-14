@@ -99,12 +99,13 @@ treename = 'deepJetTree/DeepJetTree'
 #treename = 'DiMuDiTauAnalyzer/objectTree'
 
 # must create these branches, they are what is output
-out_truth = ['lightjet', 'bjet', 'TauHTauH']#, 'TauHTauM', 'TauHTauE']#, 'TauMTauE']
+out_truth = ['lightjet', 'bjet','cjet','TauHTauH']#, 'TauHTauM', 'TauHTauE']#, 'TauMTauE']
 out_vars = ['jet_mass'] # for mass decorrelation
 # here make a map for convenience later
 truth_map = {
-    'lightjet': ['jet_isUD','jet_isS','jet_isG','jet_isC'],
+    'lightjet': ['jet_isUD','jet_isS','jet_isG'],
     'bjet': ['jet_isB'],
+    'cjet': ['jet_isC'],
     'TauHTauH': ['jet_isTauHTauH'],
     #'TauHTauM': ['jet_isTauHTauM'],
     #'TauHTauE': ['jet_isTauHTauE'],
@@ -374,8 +375,8 @@ def build_truth(arrays,fname=''):
         for b in bs:
             # only grab a certain type of jet from each sample
             if 'SUSY' in fname and 'Tau' not in t: continue
-            if 'TTJet' in fname and t not in ['bjet','lightjet']: continue
-            if 'QCD' in fname and t not in ['bjet','lightjet']: continue
+            if 'TTJet' in fname and t not in ['bjet','lightjet','cjet']: continue
+            if 'QCD' in fname and t not in ['bjet','lightjet','cjet']: continue
             if t=='lightjet': # toss 90% of lightjet since we have so much
                 rdf = np.random.rand(*thistruth.shape)
                 thistruth = (thistruth | ((arrays[b]==1) & (rdf<0.1)))

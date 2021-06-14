@@ -241,8 +241,7 @@ callbacks = [
 modelArgs = {
     'doLSTM': False,
     'lstmWidth': 128,
-#    'depth': 8,
-    'depth': 32,
+    'depth': 8,
     'width': 256,
     'batchnorm': True,
     'momentum': 0.6, # 0.6-0.85 for large batches (5k+), larger (0.9-0.99) for smaller batches
